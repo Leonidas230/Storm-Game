@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "allowUnreachableCode": true,
+    "allowSyntheticDefaultImports": true,
+    "module": "commonjs",
+    "moduleDetection": "force",
+    "moduleResolution": "node",
+    "noLib": true,
+    "outDir": "out",
+    "rootDir": "src",
+    "strict": true,
+    "typeRoots": ["node_modules/@rbxts"]
+  },
+  "include": ["src"]
+}

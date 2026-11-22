@@ -1,0 +1,7 @@
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+include/*.lua
+node_modules/
+out/
