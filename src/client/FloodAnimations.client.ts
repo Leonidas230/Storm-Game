@@ -2,7 +2,7 @@ import { configureCharacterAnimations } from "./CharacterAnimationController";
 
 configureCharacterAnimations({
 	characterName: "Flood",
-	rigAssetId: 126251167185079,
+	rigAssetId: 116034060175659,
 	idle: "rbxassetid://86401936157217",
 	walk: "rbxassetid://130001828696595",
 	run: "rbxassetid://107035105054208",
@@ -19,7 +19,7 @@ configureCharacterAnimations({
 	},
 	attacks: [
 		"rbxassetid://117804197292864",
-		"rbxassetid://104798264331406",
-		"rbxassetid://113694373844766",
+		"rbxassetid://108428203104305",
+		"rbxassetid://107930608960516",
 	],
 });

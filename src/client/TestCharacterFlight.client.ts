@@ -6,11 +6,12 @@ const UserInputService = game.GetService("UserInputService");
 const Workspace = game.GetService("Workspace");
 
 const RIG_ASSET_IDS = {
-	Rage: 82365423189386,
-	Flood: 126251167185079,
-	Rain: 111723898522317,
+	Rage: 86906253861216,
+	Flood: 116034060175659,
+	Rain: 76860276062667,
 };
 const FLIGHT_SPEED = 45;
+const FLIGHT_SPRINT_MULTIPLIER = 2;
 const FLIGHT_RESPONSE = 4;
 const MAX_FLIGHT_ACCELERATION = 90;
 const SPACE_DOUBLE_TAP_WINDOW = 0.8;
@@ -39,7 +40,7 @@ let flightForce: VectorForce | undefined;
 let flightOrientation: AlignOrientation | undefined;
 let flightConnection: RBXScriptConnection | undefined;
 let stateConnection: RBXScriptConnection | undefined;
-let baseplateTouchConnection: RBXScriptConnection | undefined;
+let floorTouchConnection: RBXScriptConnection | undefined;
 let recoveryCleanup: (() => void) | undefined;
 let isRecovering = false;
 let isRecoveryRenderStepBound = false;
@@ -79,7 +80,7 @@ function grounded(): boolean {
 		humanoid.FloorMaterial !== Enum.Material.Air &&
 		state !== Enum.HumanoidStateType.Jumping &&
 		state !== Enum.HumanoidStateType.Freefall &&
-		verticalSpeed <= 2
+		math.abs(verticalSpeed) <= 2
 	);
 }
 
@@ -95,7 +96,7 @@ function airborne(): boolean {
 		state === Enum.HumanoidStateType.Freefall ||
 		state === Enum.HumanoidStateType.FallingDown ||
 		state === Enum.HumanoidStateType.Physics ||
-		(root?.AssemblyLinearVelocity.Y ?? 0) > 2
+		math.abs(root?.AssemblyLinearVelocity.Y ?? 0) > 2
 	);
 }
 
@@ -551,7 +552,12 @@ function startFlying(): void {
 		}
 
 		const isCharging = flyChargeStartedAt !== undefined;
-		let targetVelocity = movement.mul(FLIGHT_SPEED);
+		const isFlightSprinting =
+			UserInputService.IsKeyDown(Enum.KeyCode.LeftShift) ||
+			UserInputService.IsKeyDown(Enum.KeyCode.RightShift);
+		let targetVelocity = movement.mul(
+			FLIGHT_SPEED * (isFlightSprinting ? FLIGHT_SPRINT_MULTIPLIER : 1),
+		);
 		let response = FLIGHT_RESPONSE;
 		let maxAcceleration = MAX_FLIGHT_ACCELERATION;
 		if (isCharging) {
@@ -599,8 +605,8 @@ function setCharacter(character: Model): void {
 	finishLandingRecovery();
 	stopFlying(false);
 	stateConnection?.Disconnect();
-	baseplateTouchConnection?.Disconnect();
-	baseplateTouchConnection = undefined;
+	floorTouchConnection?.Disconnect();
+	floorTouchConnection = undefined;
 	activeCharacter = character;
 	humanoid = undefined;
 	root = undefined;
@@ -653,14 +659,21 @@ function setCharacter(character: Model): void {
 
 		humanoid = characterHumanoid;
 		root = characterRoot;
-		const baseplate = Workspace.FindFirstChild("Baseplate", true);
-		if (baseplate?.IsA("BasePart")) {
-			baseplateTouchConnection = baseplate.Touched.Connect((touchedPart) => {
+		const floor =
+			Workspace.FindFirstChild("MainFloor2", true)?.IsA("BasePart") === true
+				? (Workspace.FindFirstChild("MainFloor2", true) as BasePart)
+				: Workspace.FindFirstChild("MainFloor", true)?.IsA("BasePart") === true
+					? (Workspace.FindFirstChild("MainFloor", true) as BasePart)
+					: undefined;
+		if (floor) {
+			floorTouchConnection = characterRoot.Touched.Connect((touchedPart) => {
 				if (
 					!isFlying ||
 					activeCharacter !== character ||
 					player.Character !== character ||
-					!touchedPart.IsDescendantOf(character)
+					touchedPart !== floor &&
+					touchedPart.Name !== "MainFloor2" &&
+					touchedPart.Name !== "MainFloor"
 				) {
 					return;
 				}
@@ -669,7 +682,7 @@ function setCharacter(character: Model): void {
 				lastSpaceTapAt = -1;
 			});
 		} else {
-			warn("Character flight landing contact could not bind: Workspace has no Baseplate part.");
+			warn("Character flight landing contact could not bind: Workspace has no MainFloor or MainFloor2 part.");
 		}
 
 		stateConnection = characterHumanoid.StateChanged.Connect((_, state) => {

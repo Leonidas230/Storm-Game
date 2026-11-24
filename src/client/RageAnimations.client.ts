@@ -2,7 +2,7 @@ import { configureCharacterAnimations } from "./CharacterAnimationController";
 
 configureCharacterAnimations({
 	characterName: "Rage",
-	rigAssetId: 82365423189386,
+	rigAssetId: 86906253861216,
 	idle: "rbxassetid://117870948445296",
 	walk: "rbxassetid://114004021964836",
 	run: "rbxassetid://87332669504020",

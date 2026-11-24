@@ -5,19 +5,22 @@ const ServerStorage = game.GetService("ServerStorage");
 const Workspace = game.GetService("Workspace");
 
 const RIG_CHARACTERS = {
-	Rage: { assetId: 82365423189386 },
-	Flood: { assetId: 126251167185079 },
-	Rain: { assetId: 111723898522317 },
+	Rage: { assetId: 86906253861216 },
+	Flood: { assetId: 116034060175659 },
+	Rain: { assetId: 76860276062667 },
 };
 const TEST_RIG_VISUAL_YAW_OFFSET_DEGREES = 90;
 const TEST_RIG_WALK_SPEED = 16;
-const TEST_RIG_SPRINT_SPEED = 24;
+const TEST_RIG_SPRINT_SPEED = 40;
 
 const characterLoadouts = [
-	{ character: "Rage", weapon: "Bow", damage: 35, range: 250, cooldown: 1 },
+	{ character: "Rage", weapon: "Fists", damage: 35, range: 6, cooldown: 1 },
 	{ character: "Flood", weapon: "Sword", damage: 30, range: 8, cooldown: 0.7 },
 	{ character: "Rain", weapon: "Bow", damage: 35, range: 250, cooldown: 1 },
 ];
+const RAGE_HITBOX_ACTIVE_TIME = 0.2;
+const RAGE_HITBOX_SAMPLE_INTERVAL = 0.05;
+const RAGE_HITBOX_VISUAL_TIME = 4;
 
 function getOrCreateRemoteEvent(name: string): RemoteEvent {
 	const existing = ReplicatedStorage.FindFirstChild(name);
@@ -291,7 +294,7 @@ function replaceWithTestRig(
 	});
 	root.Transparency = 1;
 	root.CastShadow = false;
-	root.CanTouch = false;
+	root.CanTouch = true;
 	root.CanCollide = false;
 
 	const chest = rig.FindFirstChild("Chest", true);
@@ -341,11 +344,7 @@ function replaceWithTestRig(
 	attachHatToHead(rig);
 	const weldedPartCount = weldLooseRigParts(rig, root);
 	const [morphBoundsFrame, morphBoundsSize] = rig.GetBoundingBox();
-	root.Size = new Vector3(
-		math.max(morphBoundsSize.X, 1),
-		math.max(morphBoundsSize.Y, 2),
-		math.max(morphBoundsSize.Z, 1),
-	);
+	root.Size = new Vector3(2, 2, 1);
 	const morphBottom = morphBoundsFrame.Position.Y - morphBoundsSize.Y / 2;
 	humanoid.HipHeight = math.max(0, root.Position.Y - morphBottom - root.Size.Y / 2);
 	if (weldedPartCount > 0) {
@@ -502,6 +501,9 @@ function equipSelectedWeapon(player: Player): void {
 
 	const backpack = player.FindFirstChildOfClass("Backpack") ?? player.WaitForChild("Backpack");
 	removePlayerWeapons(player);
+	if (loadout.weapon === "Fists") {
+		return;
+	}
 	createWeapon(loadout).Parent = backpack;
 }
 
@@ -535,6 +537,82 @@ function createArrowTrail(origin: Vector3, endpoint: Vector3): void {
 	task.delay(0.12, () => trail.Destroy());
 }
 
+function showRageHitbox(hitboxCFrame: CFrame, hitboxSize: Vector3): void {
+	const hitbox = new Instance("Part");
+	hitbox.Name = "RageAttackHitbox";
+	hitbox.Size = hitboxSize;
+	hitbox.CFrame = hitboxCFrame;
+	hitbox.Color = Color3.fromRGB(255, 0, 0);
+	hitbox.Material = Enum.Material.Neon;
+	hitbox.Transparency = 0.5;
+	hitbox.Anchored = true;
+	hitbox.CanCollide = false;
+	hitbox.CanTouch = false;
+	hitbox.CanQuery = false;
+	hitbox.CastShadow = false;
+	hitbox.Parent = Workspace;
+	task.delay(RAGE_HITBOX_VISUAL_TIME, () => hitbox.Destroy());
+}
+
+function performRageAttack(
+	player: Player,
+	character: Model,
+	root: BasePart,
+	damage: number,
+	range: number,
+): void {
+	const chest = character.FindFirstChild("Chest", true);
+	const hitboxOrigin = chest?.IsA("BasePart") ? chest : root;
+	let direction = new Vector3(hitboxOrigin.CFrame.LookVector.X, 0, hitboxOrigin.CFrame.LookVector.Z);
+	if (direction.Magnitude <= 0.001) {
+		direction = new Vector3(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z);
+	}
+	if (direction.Magnitude <= 0.001) {
+		return;
+	}
+	direction = direction.Unit;
+
+	const hitboxSize = new Vector3(4, 4, range);
+	const overlapParams = new OverlapParams();
+	overlapParams.FilterType = Enum.RaycastFilterType.Exclude;
+	overlapParams.FilterDescendantsInstances = [character];
+	const damagedHumanoids = new Set<Humanoid>();
+	let lastVisualPosition: Vector3 | undefined;
+	const startedAt = os.clock();
+
+	task.spawn(() => {
+		while (
+			os.clock() - startedAt < RAGE_HITBOX_ACTIVE_TIME &&
+			root.Parent &&
+			player.Character === character &&
+			player.GetAttribute("SelectedCharacter") === "Rage"
+		) {
+			const hitboxCenter = hitboxOrigin.Position.add(direction.mul(range / 2));
+			const hitboxCFrame = CFrame.lookAt(hitboxCenter, hitboxCenter.add(direction));
+			if (!lastVisualPosition || hitboxCenter.sub(lastVisualPosition).Magnitude > 0.1) {
+				showRageHitbox(hitboxCFrame, hitboxSize);
+				lastVisualPosition = hitboxCenter;
+			}
+
+			Workspace.GetPartBoundsInBox(hitboxCFrame, hitboxSize, overlapParams).forEach((part) => {
+				const target = part.FindFirstAncestorOfClass("Model");
+				const humanoid = target?.FindFirstChildOfClass("Humanoid");
+				if (
+					target &&
+					target !== character &&
+					humanoid &&
+					humanoid.Health > 0 &&
+					!damagedHumanoids.has(humanoid)
+				) {
+					damagedHumanoids.add(humanoid);
+					humanoid.TakeDamage(damage);
+				}
+			});
+			task.wait(RAGE_HITBOX_SAMPLE_INTERVAL);
+		}
+	});
+}
+
 function attack(player: Player, weaponName: string, aimDirection: Vector3): void {
 	const selectedCharacter = player.GetAttribute("SelectedCharacter");
 	if (!typeIs(selectedCharacter, "string")) {
@@ -552,9 +630,12 @@ function attack(player: Player, weaponName: string, aimDirection: Vector3): void
 		return;
 	}
 
-	const equippedTool = character.FindFirstChild(weaponName);
-	if (!equippedTool?.IsA("Tool")) {
-		return;
+	if (loadout.weapon !== "Fists") {
+		const equippedTool = character.FindFirstChild(weaponName);
+		const backpackTool = player.FindFirstChildOfClass("Backpack")?.FindFirstChild(weaponName);
+		if (!equippedTool?.IsA("Tool") && !backpackTool?.IsA("Tool")) {
+			return;
+		}
 	}
 
 	const now = os.clock();
@@ -563,6 +644,15 @@ function attack(player: Player, weaponName: string, aimDirection: Vector3): void
 		return;
 	}
 	nextAttackTime.set(player, now + loadout.cooldown);
+
+	if (loadout.weapon === "Fists") {
+		const root = character.FindFirstChild("HumanoidRootPart", true);
+		if (!root?.IsA("BasePart")) {
+			return;
+		}
+		performRageAttack(player, character, root, loadout.damage, loadout.range);
+		return;
+	}
 
 	const originFrame = getAttackOrigin(character);
 	if (!originFrame) {
